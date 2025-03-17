@@ -4,16 +4,21 @@ import com.example.fingerprint_api.service.FingerprintService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.example.fingerprint_api.service.UserService;
 
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/fingerprint")
+@RequestMapping("/api/v1/fingerprint")
 public class FingerprintController {
 
     @Autowired
     private FingerprintService fingerprintService;
+
+    @Autowired
+    private UserService userService; // para guardar la huella
 
     @GetMapping("/readers")
     public ResponseEntity<List<String>> getReaders() throws Exception {
@@ -45,11 +50,27 @@ public class FingerprintController {
         return ResponseEntity.ok(sessionId);
     }
 
-    @PostMapping("/enroll/capture/{sessionId}")
-    public ResponseEntity<String> captureForEnrollment(@PathVariable String sessionId) throws Exception {
-        String result = fingerprintService.captureForEnrollment(sessionId);
-        return ResponseEntity.ok(result);
+    @PostMapping("/enroll/capture/{sessionId}/{userId}")
+    public ResponseEntity<Map<String, Object>> captureForEnrollment(
+            @PathVariable String sessionId,
+            @PathVariable Long userId) throws Exception {
+
+        // Llama al método que captura y retorna (complete, template en Base64, etc.)
+        Map<String, Object> response = fingerprintService.captureForEnrollmentResponse(sessionId);
+
+        // Si el enrolamiento ya se completó, guardamos en BD
+        if (Boolean.TRUE.equals(response.get("complete"))) {
+            String base64Template = (String) response.get("template");
+            byte[] fmdBytes = Base64.getDecoder().decode(base64Template);
+
+            // guardar en la BD, asociándolo al usuario con ID "userId"
+            userService.saveFingerprintTemplate(userId, fmdBytes);
+        }
+
+        return ResponseEntity.ok(response);
     }
+
+
 
     @PostMapping("/verify/start")
     public ResponseEntity<String> startVerification() throws Exception {
