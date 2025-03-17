@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/fingerprint")
+@RequestMapping("/api/v1/fingerprint")
 public class FingerprintController {
 
     @Autowired
@@ -46,10 +46,11 @@ public class FingerprintController {
     }
 
     @PostMapping("/enroll/capture/{sessionId}")
-    public ResponseEntity<String> captureForEnrollment(@PathVariable String sessionId) throws Exception {
-        String result = fingerprintService.captureForEnrollment(sessionId);
-        return ResponseEntity.ok(result);
+    public ResponseEntity<Map<String, Object>> captureForEnrollment(@PathVariable String sessionId) throws Exception {
+        Map<String, Object> response = fingerprintService.captureForEnrollmentResponse(sessionId);
+        return ResponseEntity.ok(response);
     }
+
 
     @PostMapping("/verify/start")
     public ResponseEntity<String> startVerification() throws Exception {
