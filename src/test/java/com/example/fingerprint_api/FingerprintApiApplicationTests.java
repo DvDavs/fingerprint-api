@@ -1,4 +1,4 @@
-package com.example.fingerprint_api;
+package com.fingerprint_api;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

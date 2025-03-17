@@ -292,7 +292,7 @@ public class FingerprintController {
         return Base64.getEncoder().encodeToString(baos.toByteArray());
     }
 
-    private class EnrollmentSession {
+    private static class EnrollmentSession {
         private final List<Fmd> fmds = new ArrayList<>();
         private final int required = 4;
         private final String id;
