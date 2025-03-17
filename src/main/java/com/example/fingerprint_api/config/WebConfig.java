@@ -1,4 +1,4 @@
-package com.example.fingerprint_api;
+package com.example.fingerprint_api.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
