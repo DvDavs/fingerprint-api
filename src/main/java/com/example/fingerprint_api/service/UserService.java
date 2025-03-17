@@ -68,6 +68,13 @@ public class UserService {
         logger.info("User deleted with id: {}", id);
     }
 
+    public void saveFingerprintTemplate(Long userId, byte[] fmdBytes) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+        user.setFingerprintTemplate(fmdBytes);
+        userRepository.save(user);
+    }
+
     public Optional<User> identifyUser() throws UareUException, InterruptedException, IOException {
         logger.info("Capturing fingerprint for identification");
         Fmd capturedFmd = fingerprintService.captureFingerprintFmd();
