@@ -77,16 +77,16 @@ public class MultiReaderController {
 
     /**
      * 6) Ver si la captura está activa en un lector
-     */
+
     @GetMapping("/capture/status/{readerName}")
     public ResponseEntity<?> isActive(@PathVariable("readerName") String readerName) {
         boolean active = multiReaderFingerprintService.isCaptureActive(readerName);
         return ResponseEntity.ok("Captura activa para " + readerName + ": " + active);
-    }
+    } */
 
     /**
      * 7) Ver la última huella (base64) capturada de un lector
-     */
+
     @GetMapping("/last/{readerName}")
     public ResponseEntity<?> getLastFingerprint(@PathVariable("readerName") String readerName) {
         String base64 = multiReaderFingerprintService.getLastCapturedFingerprint(readerName);
@@ -95,7 +95,7 @@ public class MultiReaderController {
         }
         return ResponseEntity.ok(base64);
     }
-
+    */
     /**
      * 8) Lista los lectores válidos actualmente registrados
      */

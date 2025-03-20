@@ -75,7 +75,7 @@ public class FingerprintService {
             throw new UareUException(96075807);
         }
         CaptureThread capture = new CaptureThread(selectedReader, false, Fid.Format.ANSI_381_2004,
-                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 5000);
+                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 1500);
         capture.start(null);
         capture.join(15000);
         CaptureThread.CaptureEvent event = capture.getLastCaptureEvent();
@@ -154,7 +154,7 @@ public class FingerprintService {
             throw new UareUException(96075807);
         }
         CaptureThread capture = new CaptureThread(selectedReader, false, Fid.Format.ANSI_381_2004,
-                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 5000);
+                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 1500);
         capture.start(null);
         capture.join(5000);
         CaptureThread.CaptureEvent event = capture.getLastCaptureEvent();
@@ -205,7 +205,7 @@ public class FingerprintService {
             throw new UareUException(96075797);
         }
         CaptureThread capture = new CaptureThread(selectedReader, false, Fid.Format.ANSI_381_2004,
-                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 5000);
+                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 1500);
         capture.start(null);
         capture.join(5000);
         CaptureThread.CaptureEvent event = capture.getLastCaptureEvent();
@@ -236,7 +236,7 @@ public class FingerprintService {
             throw new UareUException(96075797);
         }
         CaptureThread capture = new CaptureThread(selectedReader, false, Fid.Format.ANSI_381_2004,
-                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 5000);
+                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 1500);
         capture.start(null);
         capture.join(5000);
         CaptureThread.CaptureEvent event = capture.getLastCaptureEvent();
@@ -262,7 +262,7 @@ public class FingerprintService {
             throw new UareUException(96075788);
         }
         CaptureThread capture = new CaptureThread(selectedReader, false, Fid.Format.ANSI_381_2004,
-                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 5000);
+                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 1500);
         capture.start(null);
         capture.join(5000);
         CaptureThread.CaptureEvent event = capture.getLastCaptureEvent();
@@ -298,7 +298,7 @@ public class FingerprintService {
             throw new UareUException(96075797);
         }
         CaptureThread capture = new CaptureThread(selectedReader, false, Fid.Format.ANSI_381_2004,
-                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 5000);
+                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 1500);
         capture.start(null);
         capture.join(15000);
         CaptureThread.CaptureEvent event = capture.getLastCaptureEvent();
@@ -345,7 +345,7 @@ public class FingerprintService {
             throw new UareUException(96075807);
         }
         CaptureThread capture = new CaptureThread(selectedReader, false, Fid.Format.ANSI_381_2004,
-                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 5000);
+                Reader.ImageProcessing.IMG_PROC_DEFAULT, 500, 1500);
         capture.start(null);
         capture.join(5000);
         CaptureThread.CaptureEvent event = capture.getLastCaptureEvent();

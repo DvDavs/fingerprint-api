@@ -3,7 +3,7 @@ package com.example.fingerprint_api.service;
 
 import com.example.fingerprint_api.model.User;
 import com.example.fingerprint_api.repository.UserRepository;
-import com.digitalpersona.uareu.Engine;
+import com.example.fingerprint_api.util.CryptoUtils;
 import com.digitalpersona.uareu.Fmd;
 import com.digitalpersona.uareu.UareUException;
 import org.slf4j.Logger;
@@ -71,9 +71,17 @@ public class UserService {
     public void saveFingerprintTemplate(Long userId, byte[] fmdBytes) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
-        user.setFingerprintTemplate(fmdBytes);
-        userRepository.save(user);
+        try {
+            // Cifrar la plantilla de huella antes de almacenarla
+            byte[] encryptedFmd = CryptoUtils.encrypt(fmdBytes);
+            user.setFingerprintTemplate(encryptedFmd);
+            userRepository.save(user);
+        } catch (Exception e) {
+            logger.error("Error encrypting fingerprint template: {}", e.getMessage());
+            throw new RuntimeException("Error en el cifrado de la huella", e);
+        }
     }
+
 
     public Optional<User> identifyUser() throws UareUException, InterruptedException, IOException {
         logger.info("Capturing fingerprint for identification");
@@ -85,21 +93,27 @@ public class UserService {
 
         List<User> users = userRepository.findAll();
         logger.info("Comparing against {} stored fingerprints", users.size());
-        // Java
+
         for (User user : users) {
             if (user.getFingerprintTemplate() != null) {
                 logger.info("Processing user id: {} with fingerprint template size: {}", user.getId(), user.getFingerprintTemplate().length);
-                Fmd storedFmd = fingerprintService.importFmdFromByteArray(user.getFingerprintTemplate());
-                logger.info("Imported fingerprint for user id: {}", user.getId());
+                try {
+                    // Descifrar la plantilla antes de importarla
+                    byte[] decryptedFmdBytes = CryptoUtils.decrypt(user.getFingerprintTemplate());
+                    Fmd storedFmd = fingerprintService.importFmdFromByteArray(decryptedFmdBytes);
+                    logger.info("Imported fingerprint for user id: {}", user.getId());
 
-                int score = fingerprintService.compareFingerprints(storedFmd, capturedFmd);
-                logger.info("Comparison score for user id {}: {}", user.getId(), score);
+                    int score = fingerprintService.compareFingerprints(storedFmd, capturedFmd);
+                    logger.info("Comparison score for user id {}: {}", user.getId(), score);
 
-                if (score < threshold) {
-                    logger.info("Fingerprint match found for user id: {} with score: {}", user.getId(), score);
-                    return Optional.of(user);
-                } else {
-                    logger.info("Fingerprint did not match for user id: {}. Score {} is not below threshold {}", user.getId(), score, threshold);
+                    if (score < threshold) {
+                        logger.info("Fingerprint match found for user id: {} with score: {}", user.getId(), score);
+                        return Optional.of(user);
+                    } else {
+                        logger.info("Fingerprint did not match for user id: {}. Score {} is not below threshold {}", user.getId(), score, threshold);
+                    }
+                } catch (Exception e) {
+                    logger.error("Error decrypting fingerprint template for user id {}: {}", user.getId(), e.getMessage());
                 }
             } else {
                 logger.warn("User id: {} does not have a fingerprint template", user.getId());
@@ -108,4 +122,5 @@ public class UserService {
         logger.warn("No fingerprint match found");
         return Optional.empty();
     }
+
 }

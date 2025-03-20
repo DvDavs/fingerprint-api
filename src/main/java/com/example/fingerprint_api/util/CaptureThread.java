@@ -78,15 +78,20 @@ public class CaptureThread extends Thread {
         try {
             logger.info("Esperando que el lector esté listo...");
             boolean bReady = false;
-            int waitAttempts = 0;
+            int attempts = 0;
+            int backoffTime = 100; // tiempo de espera inicial en ms
             while (!bReady && !m_bCancel) {
                 Reader.Status rs = m_reader.GetStatus();
                 logger.info("➡️ Estado del lector: " + rs.status);
-                if (Reader.ReaderStatus.BUSY == rs.status) {
-                    waitAttempts++;
-                    logger.info("⏳ Lector ocupado, esperando 100ms (intento #" + waitAttempts + ")");
-                    Thread.sleep(100);
-                } else if (Reader.ReaderStatus.READY == rs.status || Reader.ReaderStatus.NEED_CALIBRATION == rs.status) {
+                if (rs.status == Reader.ReaderStatus.BUSY) {
+                    attempts++;
+                    // Si se han realizado 10 o más intentos consecutivos, se aumenta el tiempo de espera
+                    if (attempts % 10 == 0) {
+                        backoffTime = 500; // aumentar a 500 ms cada 10 intentos
+                    }
+                    logger.info("⏳ Lector ocupado, esperando " + backoffTime + "ms (intento #" + attempts + ")");
+                    Thread.sleep(backoffTime);
+                } else if (rs.status == Reader.ReaderStatus.READY || rs.status == Reader.ReaderStatus.NEED_CALIBRATION) {
                     logger.info("✅ Lector listo para captura.");
                     bReady = true;
                     break;
@@ -102,7 +107,7 @@ public class CaptureThread extends Thread {
             }
             if (bReady) {
                 logger.info("📸 Capturando huella... (resolution: " + resolution + " DPI, timeout: " + timeout + "ms)");
-                // IMPORTANTE: El orden es (formato, procesamiento, resolución, timeout)
+                // Se usa el timeout finito que se ha configurado
                 Reader.CaptureResult cr = m_reader.Capture(m_format, m_proc, resolution, timeout);
                 if (cr == null) {
                     logger.severe("⚠️ ERROR: CaptureResult es null. No se obtuvo respuesta del SDK.");
