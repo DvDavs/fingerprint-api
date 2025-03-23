@@ -32,12 +32,6 @@ public class FingerprintController {
         return ResponseEntity.ok(result);
     }
 
-    @GetMapping("/capture")
-    public ResponseEntity<String> captureFingerprint() throws Exception {
-        String result = fingerprintService.captureFingerprint();
-        return ResponseEntity.ok(result);
-    }
-
     @GetMapping("/capabilities")
     public ResponseEntity<Map<String, Object>> getCapabilities() throws Exception {
         Map<String, Object> caps = fingerprintService.getCapabilities();
@@ -70,17 +64,9 @@ public class FingerprintController {
         return ResponseEntity.ok(response);
     }
 
-
-
     @PostMapping("/verify/start")
     public ResponseEntity<String> startVerification() throws Exception {
         String result = fingerprintService.startVerification();
-        return ResponseEntity.ok(result);
-    }
-
-    @PostMapping("/verify/capture")
-    public ResponseEntity<String> captureForVerification() throws Exception {
-        String result = fingerprintService.captureForVerification();
         return ResponseEntity.ok(result);
     }
 
@@ -90,15 +76,25 @@ public class FingerprintController {
         return ResponseEntity.ok(result);
     }
 
-    @PostMapping("/identify")
-    public ResponseEntity<String> identifyFingerprint() throws Exception {
-        String result = fingerprintService.identifyFingerprint();
+    @PostMapping("/capture")
+    public ResponseEntity<String> captureFingerprint(@RequestParam("mode") String mode) throws Exception {
+        String result;
+        switch (mode.toLowerCase()) {
+            case "register":
+                // Se utiliza el método de captura para registro
+                result = fingerprintService.captureFingerprint();
+                break;
+            case "verify":
+                // Se utiliza el método de captura para verificación
+                result = fingerprintService.captureForVerification();
+                break;
+            case "identify":
+                // Se utiliza el método de captura para identificación
+                result = fingerprintService.identifyFingerprint();
+                break;
+            default:
+                throw new IllegalArgumentException("Modo no soportado: " + mode);
+        }
         return ResponseEntity.ok(result);
-    }
-
-    @GetMapping("/status")
-    public ResponseEntity<String> getReaderStatus() throws Exception {
-        String status = fingerprintService.getReaderStatus();
-        return ResponseEntity.ok(status);
     }
 }
