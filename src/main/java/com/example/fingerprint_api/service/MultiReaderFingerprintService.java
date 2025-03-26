@@ -152,15 +152,22 @@ public class MultiReaderFingerprintService {
      * Marca un lector como "en uso" para que no aparezca en la lista de autoSelectReaders().
      */
     public synchronized boolean reserveReader(String readerName, String sessionId) {
+        // Si ya existe una reserva para esta sesión, liberamos el lector anterior
+        if (sessionReservations.containsKey(sessionId)) {
+            String previousReader = sessionReservations.get(sessionId);
+            inUseReaders.remove(previousReader);
+            logger.info("Liberando lector previo: " + previousReader + " para sesión: " + sessionId);
+        }
+        // Intentar reservar el nuevo lector
         if (validReaders.containsKey(readerName) && !inUseReaders.contains(readerName)) {
             inUseReaders.add(readerName);
             sessionReservations.put(sessionId, readerName);
             logger.info("[Lector reservado]: [" + readerName + "] para sesión: " + sessionId);
-            logger.info("info lector");
             return true;
         }
         return false;
     }
+
 
 
     public synchronized void releaseReaderBySession(String sessionId) {
