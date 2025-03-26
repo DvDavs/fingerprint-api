@@ -10,6 +10,9 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,6 +47,9 @@ public class MultiReaderFingerprintService {
     private final Set<String> inUseReaders = ConcurrentHashMap.newKeySet();
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+
+    private final Map<String, String> sessionReservations = new ConcurrentHashMap<>();
+
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
@@ -137,22 +143,34 @@ public class MultiReaderFingerprintService {
             }
         }
 
-        logger.info("Lectores válidos actuales: " + validReaders.keySet());
+        logger.info("Lectores VÁLIDOS actuales: " + validReaders.keySet());
+        logger.info("Lectores OCUPADOS actuales: " + inUseReaders.toString());
         return currentlyConnected;
     }
 
     /**
      * Marca un lector como "en uso" para que no aparezca en la lista de autoSelectReaders().
      */
-    public synchronized boolean reserveReader(String readerName) {
-        // Debe existir en validReaders
+    public synchronized boolean reserveReader(String readerName, String sessionId) {
         if (validReaders.containsKey(readerName) && !inUseReaders.contains(readerName)) {
             inUseReaders.add(readerName);
-            logger.info("Lector reservado: " + readerName);
+            sessionReservations.put(sessionId, readerName);
+            logger.info("[Lector reservado]: [" + readerName + "] para sesión: " + sessionId);
+            logger.info("info lector");
             return true;
         }
         return false;
     }
+
+
+    public synchronized void releaseReaderBySession(String sessionId) {
+        String readerName = sessionReservations.remove(sessionId);
+        if (readerName != null) {
+            inUseReaders.remove(readerName);
+            logger.info("Lector liberado: " + readerName + " por desconexión de sesión: " + sessionId);
+        }
+    }
+
 
     /**
      * Liberar un lector que estaba en uso, para que pueda mostrarse de nuevo.
@@ -259,9 +277,8 @@ public synchronized boolean startContinuousCaptureForReader(String readerName) {
         }
         // Creamos la tarea con "modoChecador = true"
         logger.info("[startChecadorForReader] Lector: " + readerName);
-        reserveReader(readerName);
-
-        logger.info("[reserveReader] (" + readerName+ ")");
+        // Para el modo checador se reserva sin sessionId (o se podría ampliar)
+        reserveReader(readerName, "checador");
         startTaskForReader(readerName, existing, true);
         return true;
     }
@@ -285,14 +302,14 @@ public synchronized boolean startContinuousCaptureForReader(String readerName) {
                             Fid.Format.ANSI_381_2004,
                             Reader.ImageProcessing.IMG_PROC_DEFAULT,
                             500,   // DPI
-                            8000   // timeout
+                            -1   // timeout
                     );
 
                     if (cr != null && cr.image != null && cr.quality == Reader.CaptureQuality.GOOD) {
                         // Convertir a base64 (notificación de imagen):
                         String base64Image = FingerprintImageUtils.convertFidToBase64(cr.image);
                         lastFingerprintData.put(readerName, base64Image);
-                        publishFingerprintEvent(readerName, base64Image);
+                        publishFingerprintEvent(readerName, "", base64Image);
 
                         if (modoChecador) {
                             // Identificar de una vez
@@ -302,10 +319,17 @@ public synchronized boolean startContinuousCaptureForReader(String readerName) {
                             if (userOpt.isPresent()) {
                                 User user = userOpt.get();
                                 ChecadorEvent evt = new ChecadorEvent(readerName, user);
+                                // Codificar el readerName para el tópico
+                                String encodedReaderName = URLEncoder.encode(readerName, StandardCharsets.UTF_8.toString());
+                                String topic = "/topic/checador/" + encodedReaderName;
+                                logger.info("Enviando a topic: " + topic);
+                                messagingTemplate.convertAndSend(topic, evt);
                                 messagingTemplate.convertAndSend("/topic/checador/" + readerName, evt);
                                 logger.info("Usuario identificado en checador: "
                                         + user.getName() + " (reader: " + readerName + ")");
+
                             }
+
                         }
 
 
@@ -325,7 +349,7 @@ public synchronized boolean startContinuousCaptureForReader(String readerName) {
                     }
 
                     // Pequeña pausa antes de la siguiente captura
-                    Thread.sleep(300);
+                    Thread.sleep(100);
                 } catch (InterruptedException ie) {
                     logger.info("Captura interrumpida en: " + readerName);
                     Thread.currentThread().interrupt();
@@ -488,11 +512,12 @@ public synchronized boolean startContinuousCaptureForReader(String readerName) {
     /**
      * Publica la huella capturada vía WebSocket en /topic/fingerprints/{readerName}.
      */
-    private void publishFingerprintEvent(String readerName, String base64Fingerprint) {
+    private void publishFingerprintEvent(String readerName, String reservationId, String base64Fingerprint) {
+        String destination = "/topic/fingerprints/" + readerName + "/" + reservationId;
         var payload = new FingerprintEvent(readerName, base64Fingerprint);
-        String destination = "/topic/fingerprints/" + readerName;
         messagingTemplate.convertAndSend(destination, payload);
     }
+
 
     // ==================== SECCIÓN DE ENROLAMIENTO MULTI-PASO ====================
 

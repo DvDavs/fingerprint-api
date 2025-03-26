@@ -37,7 +37,7 @@ public class MultiReaderController {
      */
     @GetMapping("/readers")
     public ResponseEntity<?> getReaders() {
-        Set<String> readers = multiService.getValidReaderNames();
+        Set<String> readers = multiService.getAvailableReaderNames();
         return ResponseEntity.ok(readers);
     }
 
@@ -45,12 +45,13 @@ public class MultiReaderController {
      * 3) Reservar un lector para que no lo use otra pantalla.
      */
     @PostMapping("/reserve/{readerName}")
-    public ResponseEntity<?> reserveReader(@PathVariable String readerName) {
-        boolean ok = multiService.reserveReader(readerName);
+    public ResponseEntity<?> reserveReader(@PathVariable String readerName, @RequestParam String sessionId) {
+        boolean ok = multiService.reserveReader(readerName, sessionId);
         if (ok) {
-            return ResponseEntity.ok("Lector reservado: " + readerName);
+
+            return ResponseEntity.ok("Lector reservado: " + readerName + " para sesión: " + sessionId);
         } else {
-            return ResponseEntity.badRequest().body("No se pudo reservar lector: " + readerName);
+            return ResponseEntity.badRequest().body("No se pudo reservar lector: " + readerName );
         }
     }
 
@@ -58,9 +59,14 @@ public class MultiReaderController {
      * 4) Liberar un lector que estaba en uso (para que otra pantalla pueda seleccionarlo).
      */
     @PostMapping("/release/{readerName}")
-    public ResponseEntity<?> releaseReader(@PathVariable String readerName) {
-        multiService.releaseReader(readerName);
-        return ResponseEntity.ok("Lector liberado: " + readerName);
+    public ResponseEntity<?> releaseReader(@PathVariable String readerName, @RequestParam(required = false) String sessionId) {
+        if (sessionId != null) {
+            multiService.releaseReaderBySession(sessionId);
+            return ResponseEntity.ok("Lector liberado por sesión: " + sessionId);
+        } else {
+            multiService.releaseReader(readerName);
+            return ResponseEntity.ok("Lector liberado: " + readerName);
+        }
     }
 
     /**
