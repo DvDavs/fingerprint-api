@@ -1,12 +1,12 @@
 package com.example.fingerprint_api.service;
 
 import com.digitalpersona.uareu.Engine;
+import com.digitalpersona.uareu.Fmd;
 import com.digitalpersona.uareu.UareUGlobal;
+import com.digitalpersona.uareu.UareUException;
 import com.example.fingerprint_api.model.User;
 import com.example.fingerprint_api.repository.UserRepository;
 import com.example.fingerprint_api.util.CryptoUtils;
-import com.digitalpersona.uareu.Fmd;
-import com.digitalpersona.uareu.UareUException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,14 +26,10 @@ public class UserService {
     @Autowired
     private UserRepository userRepository;
 
-    @Autowired
-    private FingerprintService fingerprintService;
-
-    // Listas para mantener FMDs y usuarios en memoria
+    // Mantenemos en memoria las FMD y su lista de usuarios
     private List<Fmd> userFmds = new ArrayList<>();
     private List<User> users = new ArrayList<>();
 
-    // Cargar FMDs al iniciar la aplicación
     @PostConstruct
     public void init() {
         logger.info("Loading users and FMDs into memory...");
@@ -42,7 +38,11 @@ public class UserService {
             if (user.getFingerprintTemplate() != null) {
                 try {
                     byte[] decryptedFmdBytes = CryptoUtils.decrypt(user.getFingerprintTemplate());
-                    Fmd fmd = fingerprintService.importFmdFromByteArray(decryptedFmdBytes);
+                    Fmd fmd = UareUGlobal.GetImporter().ImportFmd(
+                            decryptedFmdBytes,
+                            Fmd.Format.ANSI_378_2004,
+                            Fmd.Format.ANSI_378_2004
+                    );
                     userFmds.add(fmd);
                     users.add(user);
                 } catch (Exception e) {
@@ -53,13 +53,15 @@ public class UserService {
         logger.info("Loaded {} FMDs into memory", userFmds.size());
     }
 
+    // ========== Métodos CRUD básicos de Usuario ==========
+
     public User createUser(User user) {
         User savedUser = userRepository.save(user);
         if (user.getFingerprintTemplate() != null) {
             try {
-                byte[] decryptedFmdBytes = CryptoUtils.decrypt(user.getFingerprintTemplate());
-                Fmd fmd = fingerprintService.importFmdFromByteArray(decryptedFmdBytes);
-                synchronized (this) { // Sincronizar para evitar problemas en entornos multi-hilo
+                byte[] decrypted = CryptoUtils.decrypt(user.getFingerprintTemplate());
+                Fmd fmd = UareUGlobal.GetImporter().ImportFmd(decrypted, Fmd.Format.ANSI_378_2004, Fmd.Format.ANSI_378_2004);
+                synchronized (this) {
                     userFmds.add(fmd);
                     users.add(savedUser);
                 }
@@ -86,8 +88,8 @@ public class UserService {
         if (userDetails.getFingerprintTemplate() != null) {
             user.setFingerprintTemplate(userDetails.getFingerprintTemplate());
             try {
-                byte[] decryptedFmdBytes = CryptoUtils.decrypt(userDetails.getFingerprintTemplate());
-                Fmd fmd = fingerprintService.importFmdFromByteArray(decryptedFmdBytes);
+                byte[] decrypted = CryptoUtils.decrypt(userDetails.getFingerprintTemplate());
+                Fmd fmd = UareUGlobal.GetImporter().ImportFmd(decrypted, Fmd.Format.ANSI_378_2004, Fmd.Format.ANSI_378_2004);
                 synchronized (this) {
                     int index = users.indexOf(user);
                     if (index != -1) {
@@ -106,74 +108,78 @@ public class UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         synchronized (this) {
-            int index = users.indexOf(user);
-            if (index != -1) {
-                userFmds.remove(index);
-                users.remove(index);
+            int idx = users.indexOf(user);
+            if (idx != -1) {
+                userFmds.remove(idx);
+                users.remove(idx);
             }
         }
         userRepository.deleteById(id);
     }
 
+    /**
+     * Método "clásico": captura en ese momento. (Lo usabas antes)
+     * Se puede mantener si deseas, pero ahora en el "checador" lo hacemos en MultiReaderFingerprintService.
+     */
+    public Optional<User> identifyUserByCapture(String readerName) throws UareUException, InterruptedException, IOException {
+        // Este quedaría obsoleto si prefieres la lógica en MultiReaderFingerprintService
+        return Optional.empty();
+    }
+
+    /**
+     * Identificación recibiendo un Fmd ya capturado (por ejemplo, desde el "checador").
+     */
+    public synchronized Optional<User> identifyUser(Fmd capturedFmd) throws UareUException {
+        // Nota: Se sincroniza la lectura de userFmds / users
+        if (userFmds.isEmpty()) {
+            logger.warn("No hay FMDs en memoria");
+            return Optional.empty();
+        }
+        Engine engine = UareUGlobal.GetEngine();
+        int threshold = Engine.PROBABILITY_ONE / 100000; // 1 en 100,000
+
+        Engine.Candidate[] candidates = engine.Identify(
+                capturedFmd,
+                0,
+                userFmds.toArray(new Fmd[0]),
+                threshold,
+                1
+        );
+        if (candidates.length > 0) {
+            int index = candidates[0].fmd_index;
+            if (index >= 0 && index < users.size()) {
+                User matched = users.get(index);
+                logger.info("Usuario identificado: {} (index: {})", matched.getId(), index);
+                return Optional.of(matched);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Guarda la huella en la BD (encriptada) y la sube a userFmds en memoria.
+     */
     public void saveFingerprintTemplate(Long userId, byte[] fmdBytes) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
-       // saveFingerprintTemplate method snippet (after)
-        byte[] encryptedFmd;
         try {
-            encryptedFmd = CryptoUtils.encrypt(fmdBytes);
-        } catch (Exception e) {
-            logger.error("Error encrypting fingerprint template for user {}: {}", userId, e.getMessage());
-            throw new RuntimeException(e);
-        }
-        user.setFingerprintTemplate(encryptedFmd);
-        User savedUser = userRepository.save(user);
-        try {
-            Fmd fmd = fingerprintService.importFmdFromByteArray(fmdBytes);
+            byte[] encryptedFmd = CryptoUtils.encrypt(fmdBytes);
+            user.setFingerprintTemplate(encryptedFmd);
+            User saved = userRepository.save(user);
+
+            Fmd fmd = UareUGlobal.GetImporter().ImportFmd(fmdBytes, Fmd.Format.ANSI_378_2004, Fmd.Format.ANSI_378_2004);
             synchronized (this) {
-                int index = users.indexOf(user);
-                if (index != -1) {
-                    userFmds.set(index, fmd);
-                    users.set(index, savedUser);
+                int idx = users.indexOf(user);
+                if (idx != -1) {
+                    userFmds.set(idx, fmd);
+                    users.set(idx, saved);
                 } else {
                     userFmds.add(fmd);
-                    users.add(savedUser);
+                    users.add(saved);
                 }
             }
         } catch (Exception e) {
-            logger.error("Error adding/updating FMD for user {}: {}", userId, e.getMessage());
+            logger.error("Error saving fingerprint for user {}: {}", userId, e.getMessage());
         }
-    }
-
-    public Optional<User> identifyUser() throws UareUException, InterruptedException, IOException {
-        logger.info("Capturing fingerprint for identification");
-        Fmd capturedFmd = fingerprintService.captureFingerprintFmd();
-        logger.info("Fingerprint captured successfully");
-
-        Engine engine = UareUGlobal.GetEngine();
-        int threshold = Engine.PROBABILITY_ONE / 100000; // Umbral de probabilidad (ajustable)
-        synchronized (this) { // Sincronizar acceso a las listas
-            if (userFmds.isEmpty()) {
-                logger.warn("No fingerprints loaded in memory");
-                return Optional.empty();
-            }
-            Engine.Candidate[] candidates = engine.Identify(
-                    capturedFmd,
-                    0,
-                    userFmds.toArray(new Fmd[0]),
-                    threshold,
-                    1 // Número máximo de coincidencias a devolver
-            );
-            if (candidates.length > 0) {
-                int index = candidates[0].fmd_index;
-                if (index >= 0 && index < users.size()) {
-                    User matchedUser = users.get(index);
-                    logger.info("User identified: {} (index: {})", matchedUser.getId(), index);
-                    return Optional.of(matchedUser);
-                }
-            }
-        }
-        logger.warn("No matching user found");
-        return Optional.empty();
     }
 }
