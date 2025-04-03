@@ -241,7 +241,7 @@ public synchronized boolean startContinuousCaptureForReader(String readerName) {
         try {
             refreshConnectedReaders();
         } catch (UareUException e) {
-            logger.severe("Error al refrescar lectores: " + e.getMessage());
+            logger.log(java.util.logging.Level.SEVERE, "Error al refrescar lectores", e);
             return false;
         }
         existing = validReaders.get(readerName);
@@ -358,17 +358,17 @@ public synchronized boolean startContinuousCaptureForReader(String readerName) {
                     // Pequeña pausa antes de la siguiente captura
                     Thread.sleep(100);
                 } catch (InterruptedException ie) {
-                    logger.info("Captura interrumpida en: " + readerName);
+                    logger.log(java.util.logging.Level.INFO, "Captura interrumpida en: " + readerName, ie);
                     Thread.currentThread().interrupt();
                     break;
                 } catch (UareUException ue) {
-                    logger.severe("Error UareU en " + readerName + ": " + ue.getMessage());
+                    logger.log(java.util.logging.Level.SEVERE, "Error UareU en " + readerName, ue);
                     consecutiveErrors.incrementAndGet();
                     if (consecutiveErrors.get() >= MAX_CONSECUTIVE_ERRORS) {
                         break;
                     }
                 } catch (Exception e) {
-                    logger.severe("Error inesperado en captura de " + readerName + ": " + e.getMessage());
+                    logger.log(java.util.logging.Level.SEVERE, "Error inesperado en captura de " + readerName, e);
                     consecutiveErrors.incrementAndGet();
                     if (consecutiveErrors.get() >= MAX_CONSECUTIVE_ERRORS) {
                         break;

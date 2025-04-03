@@ -54,20 +54,4 @@ public class UserController {
         return ResponseEntity.ok().build();
     }
 
-    /**
-     * Ejemplo: si quisieras exponer un endpoint que identifique
-     * al usuario usando una captura puntual en el momento:
-     */
-    @PostMapping("/identifyByReader/{readerName}")
-    public ResponseEntity<?> identifyByReader(@PathVariable String readerName) {
-        // Si prefieres hacerlo directamente en "MultiReaderFingerprintService",
-        // este endpoint sería opcional.
-        try {
-            // Podrías delegar a multiService.captureSingleFingerprintFmd(readerName)
-            // y luego userService.identifyUser(fmd).
-            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body("No implementado aquí");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
-        }
-    }
 }

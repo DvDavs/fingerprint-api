@@ -59,7 +59,9 @@ public class CaptureThread extends Thread {
             if (m_last_capture.exception instanceof UareUException) {
                 throw (UareUException) m_last_capture.exception;
             } else {
-                throw new UareUException(96075787);
+                UareUException ex = new UareUException(96075787);
+                ex.initCause(m_last_capture.exception);
+                throw ex;
             }
         }
         return m_last_capture;
@@ -101,9 +103,12 @@ public class CaptureThread extends Thread {
             logger.severe("❌ Excepción en la captura: " + e.getMessage());
             m_last_capture = new CaptureEvent(this, ACT_CAPTURE, null, null, e);
         } catch (Exception e) {
-            logger.severe("❌ Excepción inesperada: " + e.getMessage());
-            m_last_capture = new CaptureEvent(this, ACT_CAPTURE, null, null, new UareUException(96075787));
+            logger.log(java.util.logging.Level.SEVERE, "❌ Excepción inesperada en Capture", e);
+            UareUException ex = new UareUException(96075787);
+            ex.initCause(e);
+            m_last_capture = new CaptureEvent(this, ACT_CAPTURE, null, null, ex);
         }
+
         logger.info("=========== FINGERPRINT CAPTURE OPERATION COMPLETED ===========");
     }
     private void Stream() {
@@ -141,8 +146,10 @@ public class CaptureThread extends Thread {
             logger.severe("Streaming error: " + e.getMessage());
             NotifyListener(ACT_CAPTURE, null, null, e);
         } catch (InterruptedException e) {
-            logger.severe("Streaming interrupted: " + e.getMessage());
-            NotifyListener(ACT_CAPTURE, null, null, new UareUException(96075787));
+            logger.log(java.util.logging.Level.SEVERE, "Streaming interrupted", e);
+            UareUException ex = new UareUException(96075787);
+            ex.initCause(e);
+            NotifyListener(ACT_CAPTURE, null, null, ex);
             Thread.currentThread().interrupt();
         }
         if (m_bCancel) {

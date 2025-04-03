@@ -5,7 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 @ControllerAdvice
@@ -19,7 +19,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(UareUException.class)
     public ResponseEntity<String> handleUareUException(UareUException ex) {
-        logger.severe("UareUException ocurrida: Código " + ex.getCode() + " - " + ex.toString());
+        logger.log(Level.SEVERE, "UareUException ocurrida: Código " + ex.getCode(), ex);
         String errorMessage = "UareUException ocurrida: Código " + ex.getCode() + " - " + ex.toString();
         return new ResponseEntity<>(errorMessage, HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -29,7 +29,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<String> handleGenericException(Exception ex) {
-        logger.severe("Excepción inesperada: " + ex.getMessage());
+        logger.log(Level.SEVERE, "Excepción inesperada", ex);
         String errorMessage = "Ocurrió un error inesperado: " + ex.getMessage();
         return new ResponseEntity<>(errorMessage, HttpStatus.INTERNAL_SERVER_ERROR);
     }
