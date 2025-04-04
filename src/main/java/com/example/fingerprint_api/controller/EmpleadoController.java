@@ -64,13 +64,16 @@ public class EmpleadoController {
         // Considera devolver DTO
     }
 
+
+
     @PutMapping("/{id}")
-    public ResponseEntity<Empleado> updateEmpleado(@PathVariable Integer id, @Valid @RequestBody EmpleadoUpdateDto updateDto) {
-        // @Valid también puede aplicar aquí si defines validaciones en EmpleadoUpdateDto
-        Empleado updatedEmpleado = empleadoService.updateEmpleado(id, updateDto);
-        logger.info("PUT /api/empleados/{} - Empleado actualizado.", id);
-        return ResponseEntity.ok(updatedEmpleado);
-        // Considera devolver DTO
+    public ResponseEntity<Empleado> updateEmpleado(
+            @PathVariable Integer id,
+            @Valid @RequestBody EmpleadoUpdateDto updateDto) { // Validar el DTO entrante
+        logger.info("PUT /api/empleados/{} - Intentando actualizar empleado", id);
+        Empleado empleadoActualizado = empleadoService.updateEmpleado(id, updateDto);
+        logger.info("PUT /api/empleados/{} - Empleado actualizado", id);
+        return ResponseEntity.ok(empleadoActualizado); // Devuelve 200 OK con el empleado actualizado
     }
 
     @GetMapping("/{empleadoId}/huellas")
@@ -109,6 +112,7 @@ public class EmpleadoController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno al guardar la huella."));
         }
     }
+
 
     @DeleteMapping("/{empleadoId}/huellas/{huellaId}")
     public ResponseEntity<Void> deleteHuella(
