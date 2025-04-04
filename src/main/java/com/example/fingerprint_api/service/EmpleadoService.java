@@ -1,8 +1,8 @@
 package com.example.fingerprint_api.service;
 
-import com.example.fingerprint_api.dto.EmpleadoCreateDto; // Importar nuevo DTO
-import com.example.fingerprint_api.dto.EmpleadoUpdateDto;
-import com.example.fingerprint_api.exception.ApiException; // Para error de conflicto
+import com.example.fingerprint_api.dto.EmpleadoCreateDto;
+import com.example.fingerprint_api.dto.EmpleadoUpdateDto; // Asegúrate de importar el DTO correcto
+import com.example.fingerprint_api.exception.ApiException;
 import com.example.fingerprint_api.exception.ResourceNotFoundException;
 import com.example.fingerprint_api.model.Empleado;
 import com.example.fingerprint_api.model.Huella;
@@ -11,14 +11,13 @@ import com.example.fingerprint_api.repository.HuellaRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus; // Para ApiException
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Transactional; // Importante para update
 
 import java.util.List;
-import java.util.UUID; // Para generar UUID
 import java.util.Optional;
-
+import java.util.UUID;
 
 @Service
 public class EmpleadoService {
@@ -32,13 +31,13 @@ public class EmpleadoService {
     private HuellaRepository huellaRepository;
 
     @Autowired
-    private UserService userService;
+    private UserService userService; // Asumo que existe para manejo de huellas en memoria
 
     @Transactional(readOnly = true)
     public List<Empleado> getAllEmpleados() {
         logger.debug("Solicitando todos los empleados");
         List<Empleado> empleados = empleadoRepository.findAll();
-        logger.info("Se encontraron {} empleados en la BD.", empleados.size()); // Log para verificar
+        logger.info("Se encontraron {} empleados en la BD.", empleados.size());
         return empleados;
     }
 
@@ -49,12 +48,9 @@ public class EmpleadoService {
                 .orElseThrow(() -> new ResourceNotFoundException("Empleado no encontrado con ID: " + empleadoId));
     }
 
-    /**
-     * Crea un nuevo registro de empleado en la base de datos.
-     */
     @Transactional
     public Empleado createEmpleado(EmpleadoCreateDto createDto) {
-        // Validación Opcional: Verificar si ya existe RFC o CURP
+        // Validación de unicidad RFC/CURP
         empleadoRepository.findByRfc(createDto.getRfc().toUpperCase())
                 .ifPresent(existing -> {
                     throw new ApiException("Ya existe un empleado con el RFC: " + createDto.getRfc(), HttpStatus.CONFLICT);
@@ -67,7 +63,6 @@ public class EmpleadoService {
         logger.info("Creando nuevo empleado con RFC: {}", createDto.getRfc());
 
         Empleado nuevoEmpleado = new Empleado();
-        // Mapear datos del DTO a la entidad
         nuevoEmpleado.setRfc(createDto.getRfc().toUpperCase());
         nuevoEmpleado.setCurp(createDto.getCurp().toUpperCase());
         nuevoEmpleado.setPrimerNombre(createDto.getPrimerNombre());
@@ -78,10 +73,9 @@ public class EmpleadoService {
         nuevoEmpleado.setDepartamentoAdministrativoId(createDto.getDepartamentoAdministrativoId());
         nuevoEmpleado.setTipoNombramientoPrincipal(createDto.getTipoNombramientoPrincipal());
         nuevoEmpleado.setTipoNombramientoSecundario(createDto.getTipoNombramientoSecundario());
-        nuevoEmpleado.setEstatusId(createDto.getEstatusId() != null ? createDto.getEstatusId() : 1);
-        nuevoEmpleado.setUuid(UUID.randomUUID().toString());
+        nuevoEmpleado.setEstatusId(createDto.getEstatusId() != null ? createDto.getEstatusId() : 1); // Default estatus activo
+        // UUID se genera en @PrePersist
 
-        // Guardar en la BD (el ID se autogenera aquí si es AUTO_INCREMENT)
         Empleado savedEmpleado = empleadoRepository.save(nuevoEmpleado);
         logger.info("Empleado creado con ID: {}", savedEmpleado.getId());
         return savedEmpleado;
@@ -89,43 +83,67 @@ public class EmpleadoService {
 
     /**
      * Actualiza los datos permitidos de un empleado existente.
+     * Incluye validación de unicidad para RFC y CURP si se intentan cambiar.
      */
-    @Transactional
+    @Transactional // Asegura que la operación sea atómica
     public Empleado updateEmpleado(Integer empleadoId, EmpleadoUpdateDto updateDto) {
+        // 1. Obtener empleado existente (orElseThrow maneja el 404)
         Empleado empleado = getEmpleadoById(empleadoId);
 
         logger.info("Actualizando empleado con ID: {}", empleadoId);
 
-        // Actualizar campos del DTO (solo si no son null en el DTO, para permitir actualizaciones parciales)
-        // Nota: Si un campo debe poder ponerse a NULL, la lógica debería ser diferente.
-        if (updateDto.getRfc() != null) empleado.setRfc(updateDto.getRfc().toUpperCase());
-        if (updateDto.getCurp() != null) empleado.setCurp(updateDto.getCurp().toUpperCase());
-        if (updateDto.getPrimerNombre() != null) empleado.setPrimerNombre(updateDto.getPrimerNombre());
-        if (updateDto.getSegundoNombre() != null) empleado.setSegundoNombre(updateDto.getSegundoNombre());
-        if (updateDto.getPrimerApellido() != null) empleado.setPrimerApellido(updateDto.getPrimerApellido());
-        if (updateDto.getSegundoApellido() != null) empleado.setSegundoApellido(updateDto.getSegundoApellido());
-        if (updateDto.getDepartamentoAcademicoId() != null) empleado.setDepartamentoAcademicoId(updateDto.getDepartamentoAcademicoId());
-        if (updateDto.getDepartamentoAdministrativoId() != null) empleado.setDepartamentoAdministrativoId(updateDto.getDepartamentoAdministrativoId());
-        if (updateDto.getTipoNombramientoPrincipal() != null) empleado.setTipoNombramientoPrincipal(updateDto.getTipoNombramientoPrincipal());
-        if (updateDto.getTipoNombramientoSecundario() != null) empleado.setTipoNombramientoSecundario(updateDto.getTipoNombramientoSecundario());
-        // Considera si el estatus se puede actualizar aquí
+        // 2. Validar Unicidad y Actualizar RFC (si cambió y el DTO lo trae)
+        if (updateDto.getRfc() != null && !updateDto.getRfc().equalsIgnoreCase(empleado.getRfc())) {
+            String nuevoRfc = updateDto.getRfc().toUpperCase();
+            Optional<Empleado> existingByRfc = empleadoRepository.findByRfc(nuevoRfc);
+            if (existingByRfc.isPresent() && !existingByRfc.get().getId().equals(empleadoId)) {
+                // Existe otro empleado con ese RFC
+                throw new ApiException("Ya existe otro empleado con el RFC: " + nuevoRfc, HttpStatus.CONFLICT);
+            }
+            empleado.setRfc(nuevoRfc); // Actualizar si pasó la validación o es el mismo
+        }
 
-        return empleadoRepository.save(empleado);
+        // 3. Validar Unicidad y Actualizar CURP (si cambió y el DTO lo trae)
+        if (updateDto.getCurp() != null && !updateDto.getCurp().equalsIgnoreCase(empleado.getCurp())) {
+            String nuevoCurp = updateDto.getCurp().toUpperCase();
+            Optional<Empleado> existingByCurp = empleadoRepository.findByCurp(nuevoCurp);
+            if (existingByCurp.isPresent() && !existingByCurp.get().getId().equals(empleadoId)) {
+                // Existe otro empleado con ese CURP
+                throw new ApiException("Ya existe otro empleado con el CURP: " + nuevoCurp, HttpStatus.CONFLICT);
+            }
+            empleado.setCurp(nuevoCurp); // Actualizar si pasó la validación o es el mismo
+        }
+
+        // 4. Actualizar otros campos si vienen en el DTO
+        // Usamos Optional para manejar nulls de forma más limpia (alternativa a los 'if != null')
+        Optional.ofNullable(updateDto.getPrimerNombre()).ifPresent(empleado::setPrimerNombre);
+        Optional.ofNullable(updateDto.getSegundoNombre()).ifPresent(empleado::setSegundoNombre);
+        Optional.ofNullable(updateDto.getPrimerApellido()).ifPresent(empleado::setPrimerApellido);
+        Optional.ofNullable(updateDto.getSegundoApellido()).ifPresent(empleado::setSegundoApellido);
+        Optional.ofNullable(updateDto.getDepartamentoAcademicoId()).ifPresent(empleado::setDepartamentoAcademicoId);
+        Optional.ofNullable(updateDto.getDepartamentoAdministrativoId()).ifPresent(empleado::setDepartamentoAdministrativoId);
+        Optional.ofNullable(updateDto.getTipoNombramientoPrincipal()).ifPresent(empleado::setTipoNombramientoPrincipal);
+        Optional.ofNullable(updateDto.getTipoNombramientoSecundario()).ifPresent(empleado::setTipoNombramientoSecundario);
+
+        // --- Campos Opcionales (Descomentar si los añades al DTO y quieres editarlos) ---
+        // Optional.ofNullable(updateDto.getEstatusId()).ifPresent(empleado::setEstatusId);
+        // Optional.ofNullable(updateDto.getCorreoInstitucional()).ifPresent(empleado::setCorreoInstitucional);
+
+        // 5. Guardar cambios (Hibernate detecta cambios y ejecuta UPDATE)
+        // El @PreUpdate en la entidad Empleado actualizará updatedAt automáticamente
+        Empleado updatedEmpleado = empleadoRepository.save(empleado);
+        logger.info("Empleado ID: {} actualizado.", empleadoId);
+        return updatedEmpleado;
     }
 
-    /**
-     * Añade una nueva huella a un empleado existente.
-     */
+    // --- Métodos de Huellas (Sin cambios relevantes para la edición de empleado) ---
+
     @Transactional
     public Huella addHuellaToEmpleado(Integer empleadoId, String nombreDedo, byte[] fmdBytes) throws Exception {
         logger.info("Añadiendo huella para empleado ID: {}, Dedo: {}", empleadoId, nombreDedo);
-        // Delegar a UserService que maneja la BD y la caché en memoria
         return userService.saveNewHuella(empleadoId, nombreDedo, fmdBytes);
     }
 
-    /**
-     * Obtiene la lista de huellas registradas para un empleado.
-     */
     @Transactional(readOnly = true)
     public List<Huella> getHuellasByEmpleadoId(Integer empleadoId) {
         if (!empleadoRepository.existsById(empleadoId)) {
@@ -135,9 +153,6 @@ public class EmpleadoService {
         return huellaRepository.findByEmpleadoId(empleadoId);
     }
 
-    /**
-     * Elimina una huella específica de un empleado.
-     */
     @Transactional
     public void deleteHuellaFromEmpleado(Integer empleadoId, Integer huellaId) {
         logger.warn("Intentando eliminar huella ID: {} para empleado ID: {}", huellaId, empleadoId);
@@ -149,12 +164,10 @@ public class EmpleadoService {
             throw new ApiException("La huella ID " + huellaId + " no pertenece al empleado ID " + empleadoId, HttpStatus.BAD_REQUEST);
         }
 
-        huellaRepository.delete(huella); // Borrar por entidad
-
-        // Notificar a UserService para limpiar la memoria
-        userService.removeFmdDataFromMemory(huellaId);
+        huellaRepository.delete(huella);
+        userService.removeFmdDataFromMemory(huellaId); // Notificar al servicio en memoria
         logger.info("Huella ID: {} eliminada para empleado ID: {}", huellaId, empleadoId);
     }
 
-    // Podrías añadir deleteEmpleado aquí si es necesario
+    // Considera añadir un método @Transactional public void deleteEmpleado(Integer empleadoId) si lo necesitas
 }
