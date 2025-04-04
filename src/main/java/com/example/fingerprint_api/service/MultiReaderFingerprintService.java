@@ -171,7 +171,7 @@ public class MultiReaderFingerprintService {
             logger.info("Liberando lector previo: {} para sesión: {}", previousReader, sessionId);
         }
         if (validReaders.containsKey(readerName) && !inUseReaders.contains(readerName)) {
-            inUseReaders.add(readerName);
+            //inUseReaders.add(readerName);
             sessionReservations.put(sessionId, readerName);
             // *** CAMBIO: Logging SLF4J ***
             logger.info("[Lector reservado]: [{}] para sesión: {}", readerName, sessionId);
