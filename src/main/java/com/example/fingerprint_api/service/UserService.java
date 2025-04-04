@@ -4,182 +4,202 @@ import com.digitalpersona.uareu.Engine;
 import com.digitalpersona.uareu.Fmd;
 import com.digitalpersona.uareu.UareUGlobal;
 import com.digitalpersona.uareu.UareUException;
-import com.example.fingerprint_api.model.User;
-import com.example.fingerprint_api.repository.UserRepository;
+import com.example.fingerprint_api.exception.ResourceNotFoundException; // Necesitaremos crear esta excepción
+import com.example.fingerprint_api.model.Empleado;
+import com.example.fingerprint_api.model.Huella;
+import com.example.fingerprint_api.repository.EmpleadoRepository;
+import com.example.fingerprint_api.repository.HuellaRepository;
 import com.example.fingerprint_api.util.CryptoUtils;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional; // Para operaciones de escritura
 
-import jakarta.annotation.PostConstruct;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList; // Para seguridad en concurrencia
+import java.util.stream.Collectors;
 
 @Service
 public class UserService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserService.class);
 
+    // Inyectamos los nuevos repositorios
     @Autowired
-    private UserRepository userRepository;
+    private HuellaRepository huellaRepository;
+    @Autowired
+    private EmpleadoRepository empleadoRepository;
 
-    // Mantenemos en memoria las FMD y su lista de usuarios
-    private List<Fmd> userFmds = new ArrayList<>();
-    private List<User> users = new ArrayList<>();
+    // Estructura en memoria para identificación rápida [FMD + empleadoId + huellaId]
+    // Usamos CopyOnWriteArrayList para seguridad en lecturas concurrentes durante la identificación
+    // mientras ocurren escrituras (nuevas huellas/eliminaciones)
+    private final List<FmdData> fmdDataList = new CopyOnWriteArrayList<>();
+
+    // Clase interna para almacenar los datos necesarios en memoria
+    private static class FmdData {
+        final Fmd fmd;
+        final Integer empleadoId;
+        final Integer huellaId;
+
+        FmdData(Fmd fmd, Integer empleadoId, Integer huellaId) {
+            this.fmd = fmd;
+            this.empleadoId = empleadoId;
+            this.huellaId = huellaId;
+        }
+    }
 
     @PostConstruct
+    @Transactional(readOnly = true) // Buena práctica para operaciones de solo lectura
     public void init() {
-        logger.info("Loading users and FMDs into memory...");
-        List<User> allUsers = userRepository.findAll();
-        for (User user : allUsers) {
-            if (user.getFingerprintTemplate() != null) {
+        loadFmdsIntoMemory();
+    }
+
+    public void loadFmdsIntoMemory() {
+        logger.info("Cargando FMDs de huellas en memoria...");
+        fmdDataList.clear(); // Limpiamos antes de recargar
+        List<Huella> allHuellas = huellaRepository.findAll();
+        int count = 0;
+        for (Huella huella : allHuellas) {
+            if (huella.getTemplateFmd() != null && huella.getEmpleado() != null) {
                 try {
-                    byte[] decryptedFmdBytes = CryptoUtils.decrypt(user.getFingerprintTemplate());
+                    byte[] decryptedFmdBytes = CryptoUtils.decrypt(huella.getTemplateFmd());
                     Fmd fmd = UareUGlobal.GetImporter().ImportFmd(
                             decryptedFmdBytes,
-                            Fmd.Format.ANSI_378_2004,
+                            Fmd.Format.ANSI_378_2004, // Formato estándar para comparación
                             Fmd.Format.ANSI_378_2004
                     );
-                    userFmds.add(fmd);
-                    users.add(user);
+                    // Añadimos a la lista concurrente
+                    fmdDataList.add(new FmdData(fmd, huella.getEmpleado().getId(), huella.getId()));
+                    count++;
+                } catch (UareUException e) {
+                    logger.error("Error UareU al importar FMD para huella ID {}: {}", huella.getId(), e.getMessage());
                 } catch (Exception e) {
-                    logger.error("Error loading FMD for user {}: {}", user.getId(), e.getMessage());
+                    logger.error("Error al desencriptar o importar FMD para huella ID {}: {}", huella.getId(), e.getMessage(), e);
                 }
+            } else {
+                logger.warn("Huella ID {} omitida: template o empleado nulo.", huella.getId());
             }
         }
-        logger.info("Loaded {} FMDs into memory", userFmds.size());
-    }
-
-    // ========== Métodos CRUD básicos de Usuario ==========
-
-    public User createUser(User user) {
-        User savedUser = userRepository.save(user);
-        if (user.getFingerprintTemplate() != null) {
-            try {
-                byte[] decrypted = CryptoUtils.decrypt(user.getFingerprintTemplate());
-                Fmd fmd = UareUGlobal.GetImporter().ImportFmd(decrypted, Fmd.Format.ANSI_378_2004, Fmd.Format.ANSI_378_2004);
-                synchronized (this) {
-                    userFmds.add(fmd);
-                    users.add(savedUser);
-                }
-            } catch (Exception e) {
-                logger.error("Error adding FMD for new user {}: {}", savedUser.getId(), e.getMessage());
-            }
-        }
-        return savedUser;
-    }
-
-    public Optional<User> getUser(Long id) {
-        return userRepository.findById(id);
-    }
-
-    public List<User> getAllUsers() {
-        return userRepository.findAll();
-    }
-
-    public User updateUser(Long id, User userDetails) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-        user.setName(userDetails.getName());
-        user.setEmail(userDetails.getEmail());
-        if (userDetails.getFingerprintTemplate() != null) {
-            user.setFingerprintTemplate(userDetails.getFingerprintTemplate());
-            try {
-                byte[] decrypted = CryptoUtils.decrypt(userDetails.getFingerprintTemplate());
-                Fmd fmd = UareUGlobal.GetImporter().ImportFmd(decrypted, Fmd.Format.ANSI_378_2004, Fmd.Format.ANSI_378_2004);
-                synchronized (this) {
-                    int index = users.indexOf(user);
-                    if (index != -1) {
-                        userFmds.set(index, fmd);
-                        users.set(index, user);
-                    }
-                }
-            } catch (Exception e) {
-                logger.error("Error updating FMD for user {}: {}", id, e.getMessage());
-            }
-        }
-        return userRepository.save(user);
-    }
-
-    public void deleteUser(Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-        synchronized (this) {
-            int idx = users.indexOf(user);
-            if (idx != -1) {
-                userFmds.remove(idx);
-                users.remove(idx);
-            }
-        }
-        userRepository.deleteById(id);
+        logger.info("Se cargaron {} FMDs en memoria.", count);
     }
 
     /**
-     * Método "clásico": captura en ese momento. (Lo usabas antes)
-     * Se puede mantener si deseas, pero ahora en el "checador" lo hacemos en MultiReaderFingerprintService.
+     * Identifica un FMD capturado contra las huellas cargadas en memoria.
+     * Devuelve el Empleado correspondiente si se encuentra una coincidencia.
+     *
+     * @param capturedFmd El FMD capturado a identificar.
+     * @return Optional<Empleado> con el empleado si se identifica, Optional.empty() si no.
+     * @throws UareUException Si ocurre un error en el motor de comparación.
      */
-    public Optional<User> identifyUserByCapture(String readerName) throws UareUException, InterruptedException, IOException {
-        // Este quedaría obsoleto si prefieres la lógica en MultiReaderFingerprintService
-        return Optional.empty();
-    }
-
-    /**
-     * Identificación recibiendo un Fmd ya capturado (por ejemplo, desde el "checador").
-     */
-    public synchronized Optional<User> identifyUser(Fmd capturedFmd) throws UareUException {
-        // Nota: Se sincroniza la lectura de userFmds / users
-        if (userFmds.isEmpty()) {
-            logger.warn("No hay FMDs en memoria");
+    // No necesita synchronized explícito por usar CopyOnWriteArrayList (optimizado para lecturas)
+    public Optional<Empleado> identifyUser(Fmd capturedFmd) throws UareUException {
+        if (fmdDataList.isEmpty()) {
+            logger.warn("Intento de identificación sin FMDs en memoria.");
             return Optional.empty();
         }
+
+        // Extraer solo los FMDs para la comparación
+        Fmd[] fmdsToCompare = fmdDataList.stream().map(data -> data.fmd).toArray(Fmd[]::new);
+
         Engine engine = UareUGlobal.GetEngine();
-        int threshold = Engine.PROBABILITY_ONE / 100000; // 1 en 100,000
+        // Ajusta el umbral según sea necesario (más bajo = más estricto)
+        int threshold = Engine.PROBABILITY_ONE / 100000; // FAR 1 en 100k
+
+        logger.debug("Iniciando identificación 1:N con {} FMDs en memoria.", fmdsToCompare.length);
 
         Engine.Candidate[] candidates = engine.Identify(
                 capturedFmd,
-                0,
-                userFmds.toArray(new Fmd[0]),
+                0, // first view
+                fmdsToCompare,
                 threshold,
-                1
+                1 // Máximo 1 resultado (el mejor)
         );
+
         if (candidates.length > 0) {
-            int index = candidates[0].fmd_index;
-            if (index >= 0 && index < users.size()) {
-                User matched = users.get(index);
-                logger.info("Usuario identificado: {} (index: {})", matched.getId(), index);
-                return Optional.of(matched);
+            int bestMatchIndex = candidates[0].fmd_index;
+            // Validar índice (aunque CopyOnWriteArrayList es estable durante la iteración)
+            if (bestMatchIndex >= 0 && bestMatchIndex < fmdDataList.size()) {
+                FmdData matchedData = fmdDataList.get(bestMatchIndex); // Obtener datos del índice coincidente
+                Integer empleadoId = matchedData.empleadoId;
+                logger.info("Huella identificada! Índice: {}, Huella ID: {}, Empleado ID: {}", bestMatchIndex, matchedData.huellaId, empleadoId);
+                // Buscar el empleado completo en la BD
+                return empleadoRepository.findById(empleadoId);
+            } else {
+                logger.error("Índice de candidato inválido ({}) fuera de rango (0-{}).", bestMatchIndex, fmdDataList.size() - 1);
+                return Optional.empty(); // Índice inválido
             }
         }
+
+        logger.debug("Identificación 1:N no encontró coincidencias.");
         return Optional.empty();
     }
 
     /**
-     * Guarda la huella en la BD (encriptada) y la sube a userFmds en memoria.
+     * Guarda una nueva huella para un empleado y actualiza la memoria.
+     *
+     * @param empleadoId ID del empleado.
+     * @param nombreDedo Nombre/identificador del dedo.
+     * @param fmdBytes   Bytes del FMD (aún no encriptados).
+     * @return La entidad Huella guardada.
+     * @throws ResourceNotFoundException Si el empleado no existe.
+     * @throws Exception                 Si ocurre un error al encriptar o guardar.
      */
-    public void saveFingerprintTemplate(Long userId, byte[] fmdBytes) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
-        try {
-            byte[] encryptedFmd = CryptoUtils.encrypt(fmdBytes);
-            user.setFingerprintTemplate(encryptedFmd);
-            User saved = userRepository.save(user);
+    @Transactional // Operación de escritura
+    public Huella saveNewHuella(Integer empleadoId, String nombreDedo, byte[] fmdBytes) throws Exception {
+        Empleado empleado = empleadoRepository.findById(empleadoId)
+                .orElseThrow(() -> new ResourceNotFoundException("Empleado no encontrado con ID: " + empleadoId));
 
-            Fmd fmd = UareUGlobal.GetImporter().ImportFmd(fmdBytes, Fmd.Format.ANSI_378_2004, Fmd.Format.ANSI_378_2004);
-            synchronized (this) {
-                int idx = users.indexOf(user);
-                if (idx != -1) {
-                    userFmds.set(idx, fmd);
-                    users.set(idx, saved);
-                } else {
-                    userFmds.add(fmd);
-                    users.add(saved);
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Error saving fingerprint for user {}: {}", userId, e.getMessage());
+        // 1. Encriptar FMD
+        byte[] encryptedFmd = CryptoUtils.encrypt(fmdBytes);
+
+        // 2. Crear entidad Huella
+        Huella nuevaHuella = new Huella();
+        nuevaHuella.setEmpleado(empleado);
+        nuevaHuella.setNombreDedo(nombreDedo);
+        nuevaHuella.setTemplateFmd(encryptedFmd);
+        nuevaHuella.setUuid(UUID.randomUUID().toString()); // Generar UUID
+
+        // 3. Guardar en BD
+        Huella savedHuella = huellaRepository.save(nuevaHuella);
+        logger.info("Nueva huella guardada en BD con ID: {}", savedHuella.getId());
+
+
+        // 4. Añadir a la memoria (importante!)
+        try {
+            Fmd fmdInMemory = UareUGlobal.GetImporter().ImportFmd(
+                    fmdBytes, // Usamos los bytes originales (sin encriptar) para la memoria
+                    Fmd.Format.ANSI_378_2004,
+                    Fmd.Format.ANSI_378_2004
+            );
+            // Añadir a la lista concurrente
+            fmdDataList.add(new FmdData(fmdInMemory, empleadoId, savedHuella.getId()));
+            logger.info("FMD para huella ID {} añadido a la memoria.", savedHuella.getId());
+        } catch(UareUException e){
+            logger.error("Error UareU al importar FMD a memoria para nueva huella ID {}: {}", savedHuella.getId(), e.getMessage());
+            // Considerar si lanzar una excepción aquí o solo loggear,
+            // dependiendo de si la identificación inmediata es crítica.
+        }
+
+        return savedHuella;
+    }
+
+    /**
+     * Elimina los datos de una huella de la caché en memoria.
+     * Debe ser llamado DESPUÉS de que la huella se haya eliminado de la BD.
+     *
+     * @param huellaId El ID de la Huella que fue eliminada.
+     */
+    public void removeFmdDataFromMemory(Integer huellaId) {
+        boolean removed = fmdDataList.removeIf(data -> data.huellaId.equals(huellaId));
+        if (removed) {
+            logger.info("FMD para huella ID {} eliminado de la memoria.", huellaId);
+        } else {
+            logger.warn("No se encontró FMD en memoria para la huella ID {} al intentar eliminar.", huellaId);
+            // Podría ser útil recargar todo si esto pasa inesperadamente: loadFmdsIntoMemory();
         }
     }
+
+    // Ya no necesitamos los métodos CRUD de User (createUser, getUser, etc.) aquí.
 }
